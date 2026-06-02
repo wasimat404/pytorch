@@ -254,6 +254,36 @@ class TestFusionRegionDetection(InductorTestCase):
         self.assertTrue(all(c >= 0.0 for c in costs.values()))
 
 
+
+class TestLogComputeEstimations(InductorTestCase):
+    """Regression tests for _log_compute_estimations formatting."""
+
+    def test_symfloat_estimate_does_not_crash(self):
+        # https://github.com/pytorch/pytorch/issues/185900
+        # Under dynamic shapes, an analytical estimate can be a SymFloat.
+        # SymFloat.__format__ rejects non-empty specs like ".4f", so the
+        # logging helper must not pass symbolic values straight into f"{v:.4f}".
+        import torch.fx as fx
+        from torch.fx.experimental.symbolic_shapes import ShapeEnv
+        from torch._inductor.fx_passes.node_runtime_estimation import (
+            _log_compute_estimations,
+        )
+
+        shape_env = ShapeEnv()
+        sym_estimate = shape_env.create_unbacked_symint() / 2.0  # SymFloat
+
+        g = fx.Graph()
+        node = g.placeholder("x")
+        node.meta["val"] = torch.empty(0)
+
+        # Should not raise TypeError on the symbolic analytical estimate.
+        _log_compute_estimations(
+            compute_nodes=[node],
+            benchmarked_estimations=[0.1],
+            analytical_estimations=[sym_estimate],
+        )
+
+
 if __name__ == "__main__":
     from torch.testing._internal.common_utils import run_tests
 

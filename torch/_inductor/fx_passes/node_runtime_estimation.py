@@ -298,6 +298,16 @@ def _log_compute_estimations(
                     ret += f" SymInt({t})"
         return ret
 
+    def _fmt(v: Any) -> str:
+        # Estimates may be symbolic (SymFloat/SymInt) under dynamic shapes;
+        # SymFloat.__format__ rejects non-empty specs like ".4f". This is a
+        # logging-only path, so coerce to float when possible and fall back
+        # to str() for values that cannot be hinted.
+        try:
+            return f"{float(v):.4f}"
+        except (TypeError, RuntimeError):
+            return str(v)
+
     headers = [
         "Node",
         "Benchmarked Est(us)",
@@ -310,10 +320,10 @@ def _log_compute_estimations(
     rows = [
         [
             _node_summary(node),
-            f"{est_b * 1e3:.4f}",
-            f"{est_a * 1e3:.4f}",
-            f"{(est_a / est_b) if est_b > 0 else 0:.4f}",
-            f"{(est_a - est_b) * 1e3:.4f}",
+            _fmt(est_b * 1e3),
+            _fmt(est_a * 1e3),
+            _fmt((est_a / est_b) if est_b > 0 else 0),
+            _fmt((est_a - est_b) * 1e3),
             str(count_flops_fx(node)),
         ]
         for node, est_b, est_a in zip(
