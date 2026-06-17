@@ -16857,6 +16857,15 @@ class TestAutogradMultipleDispatch(TestCase):
         z.backward()
         self.assertEqual(x.grad, torch.zeros_like(x))
         self.assertEqual(y.grad, torch.zeros_like(y))
+    def test_ldexp_negative_int_exponent_gradient_187460(self):
+        # ldexp(input, other) = input * 2**other, so d/d_input = 2**other.
+        # For an integer-typed `other`, the backward must compute 2**other in
+        # floating point; otherwise negative exponents floor to 0 (see #187460).
+        for e_val, expected in [(-1, 0.5), (-2, 0.25), (0, 1.0), (2, 4.0)]:
+            m = torch.tensor([0.5], requires_grad=True)
+            e = torch.tensor([e_val], dtype=torch.int32)
+            torch.ldexp(m, e).backward()
+            self.assertEqual(m.grad, torch.full_like(m, expected))
 
     # Test that torch.autograd.backward respects __torch_function__ on tensor subclasses.
     def test_backward_respects_torch_function(self):
