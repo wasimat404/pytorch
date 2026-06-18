@@ -5,6 +5,8 @@
 #include <ATen/TensorOperators.h>
 #include <ATen/native/Distance.h>
 #include <c10/util/accumulate.h>
+#include <cmath>
+#include <limits>
 
 #ifndef AT_PER_OPERATOR_HEADERS
 #include <ATen/Functions.h>
@@ -98,6 +100,23 @@ static Tensor cdist_impl(const Tensor& x1, const Tensor& x2, const double p, std
   TORCH_CHECK(!x1.is_cuda() || x1.get_device() == x2.get_device(), "device of X1 (", x1.get_device(), ") must match device of X2 (", x2.get_device(), ")");
   SymInt c1 = x1.sym_size(-1);
   SymInt c2 = x2.sym_size(-1);
+  // For 0 < p < 1 the L-p norm grows like M^(1/p) in the feature dimension M,
+  // which diverges as p -> 0 and overflows the dtype to +inf once (1/p)*log(M)
+  // exceeds log(max_float). This is inherent to small p, not a precision issue:
+  // no rescaling keeps it finite because the true value exceeds the dtype range.
+  // Warn so the resulting +inf is not silent.
+  if (p > 0 && p < 1) {
+    if (auto m_opt = c1.maybe_as_int()) {
+      double m_val = static_cast<double>(*m_opt);
+      if (m_val > 1 && (1.0 / p) * std::log(m_val) > std::log(std::numeric_limits<float>::max())) {
+        TORCH_WARN_ONCE(
+            "cdist: with p=", p, " and feature dimension M=", m_val,
+            ", the p-norm scales as M^(1/p) which exceeds the maximum finite "
+            "float value and overflows to +inf. This is inherent to small p "
+            "(the L-p norm diverges as p approaches 0), not a precision issue.");
+      }
+    }
+  }
   // 0 - default value. If p = 2 and r1 > 25 or r2 > 25 (these values are based on performance metrics),
   // it will try to compute distance using matrix multiplication approach
   // 1 - force to use matrix multiplication for p = 2

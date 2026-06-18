@@ -2674,6 +2674,23 @@ class TestTorchDeviceType(TestCase):
             if not torch.isfinite(x.grad).all():
                 raise AssertionError("expected x.grad to be finite")
 
+    # cdist with small p overflows: ||d||_p ~ M^(1/p) diverges as p -> 0,
+    # exceeding fp32 range. Verify we warn rather than silently returning +inf.
+    def test_cdist_small_p_overflow_warns(self, device):
+        x = torch.rand(2, 3, 768, device=device)  # M=768; (1/p)*log(M) >> log(max_float)
+        y = torch.rand(2, 5, 768, device=device)
+        with self.assertWarnsRegex(UserWarning, "overflow"):
+            torch.cdist(x, y, p=0.01)
+
+    # Normal p must not emit the overflow warning.
+    def test_cdist_normal_p_no_overflow_warn(self, device):
+        x = torch.rand(2, 3, 768, device=device)
+        y = torch.rand(2, 5, 768, device=device)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")  # any warning becomes an error
+            for p in [1.0, 2.0, 3.0]:
+                torch.cdist(x, y, p=p)
+
     def test_cumsum(self, device):
         x = torch.rand(100, 100, device=device)
         res1 = torch.cumsum(x, 1)
